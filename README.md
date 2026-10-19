@@ -11,7 +11,7 @@ The scraper uses the HackerOne API, so your account needs API access. CVE/CWE da
 
 ## Install
 
-    git clone https://github.com/yuzaaone/hacktivity-scraper.git
+    git clone https://github.com/nimrnn/hacktivity-scraper.git
     cd hacktivity-scraper
     go mod download
 
