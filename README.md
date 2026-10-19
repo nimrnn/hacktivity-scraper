@@ -89,6 +89,10 @@ For read-only access without touching the file:
 
 The intended consumer is an AI agent. `SKILL.md` describes the full loop: find or build the database, resolve the bug class to real CWE labels, sample reports without flooding context, extract techniques and edge cases with `report_id` evidence, then write a new skill from them.
 
+`references/cwe-index.md` is a pre-built index of every distinct `cwe` label, deduplicated and grouped into bug-class families with counts and copy-paste `IN (...)` filters. The agent reads this instead of discovering labels by trial and error. Regenerate it after scraping more data:
+
+    make cwe-index        # python3 scripts/gen_cwe_index.py
+
 Typical request to give the agent:
 
 > Build me a skill for finding IDOR. Use the existing reports.sqlite, don't re-scrape.
@@ -106,8 +110,11 @@ Rate limiting is per client: `-rate` for the hacktivity listing, a fixed 2 req/s
 
 ## Development
 
-    make vet     # go build ./... && go vet ./...
-    make run     # go run ./cmd/scraper
+    make vet          # go build ./... && go vet ./...
+    make run          # go run ./cmd/scraper
+    make cwe-index    # regenerate references/cwe-index.md from the database
+
+The CWE index generator only reads the database (`?mode=ro`) and needs Python 3.
 
 ## Notes
 

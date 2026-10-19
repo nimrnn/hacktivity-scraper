@@ -64,34 +64,30 @@ Things that will bite you if you assume otherwise:
 
 ## Step 2 — Pick and size the target bug class
 
-Map the user's request to the labels actually present:
+Don't rediscover the label list. It is already curated in `references/cwe-index.md` (same directory as this skill, or in the `hacktivity-scraper` checkout): every distinct label, deduplicated, grouped into families, with counts, near-duplicate aliases, and ready-made `IN (...)` filters.
+
+Read that file first, then:
+
+1. Find the family matching the user's request (IDOR/BOLA, XSS, SSRF, SQL injection, access control, etc.).
+2. Use its exact labels in a single `IN (...)` filter instead of several `LIKE`s. That catches the spelling variants (`Server Side Request Forgery` vs `Server-Side Request Forgery (SSRF)`, the four XSS variants) without guessing.
+3. If the request spans families (e.g. "account takeover"), combine the relevant families' labels rather than widening to everything.
+4. Trust the filter over the family name: if a label looks misfiled, filter by the label itself.
+
+Check the index is still fresh. The header records a snapshot count; compare it with the live database:
 
 ```bash
-sqlite3 -header -column reports.sqlite \
-  "SELECT cwe, COUNT(*) AS n FROM reports
-   WHERE cwe != '' GROUP BY cwe ORDER BY n DESC LIMIT 40;"
+sqlite3 'file:reports.sqlite?mode=ro' "SELECT COUNT(*) FROM reports;"
 ```
 
-Then resolve the specific class, including synonyms in one filter:
+If the database has grown noticeably since that snapshot, regenerate before relying on counts, and look for labels that did not exist when the index was written:
 
-```sql
--- IDOR / BOLA
-WHERE cwe LIKE '%IDOR%' OR cwe LIKE '%Insecure Direct Object%'
-
--- Access control family (broader, more reports, more noise)
-WHERE cwe LIKE '%Access Control%' OR cwe LIKE '%Privilege Escalation%'
-
--- XSS, all variants
-WHERE cwe LIKE '%Cross-site Scripting%' OR cwe LIKE '%XSS%'
-
--- SSRF
-WHERE cwe LIKE '%Server-Side Request Forgery%'
-
--- Business logic
-WHERE cwe LIKE '%Business Logic%'
+```bash
+cd hacktivity-scraper && make cwe-index
+sqlite3 -header -column 'file:reports.sqlite?mode=ro' \
+  "SELECT cwe, COUNT(*) AS n FROM reports WHERE cwe != '' GROUP BY cwe ORDER BY n DESC LIMIT 40;"
 ```
 
-Count before reading. If a class has fewer than ~15 usable reports, widen to the family or add adjacent CWEs and say so in the output skill; do not pad the skill with generic filler to hide thin evidence.
+If the index file is missing, fall back to that discovery query. Either way, count before reading: if the class has fewer than ~15 usable reports, widen to the family or add adjacent labels and say so in the output skill; do not pad the skill with generic filler to hide thin evidence.
 
 ## Step 3 — Read reports without blowing up context
 
