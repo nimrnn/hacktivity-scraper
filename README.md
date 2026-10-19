@@ -2,6 +2,10 @@
 
 Downloads disclosed HackerOne reports (metadata + markdown body) into a local SQLite database. Re-running is safe: reports already stored are skipped.
 
+The point is not the scrape, it's what the data is for: feeding an AI agent that mines real reports for a specific bug class and turns them into a hunting skill - checklists, techniques, edge cases, and bypasses grounded in what researchers actually did. `cwe` is the main pivot, so an IDOR skill only reads IDOR reports.
+
+See [SKILL.md](SKILL.md) for the agent workflow that does this (database discovery, CWE filtering, sampling, extraction, and output format).
+
 ## Requirements
 
 - Go 1.26+
@@ -46,17 +50,50 @@ Reports are written to the `reports` table:
 | Column | Type | Notes |
 | --- | --- | --- |
 | `report_id` | INTEGER | Primary key |
-| `cwe` | TEXT | CWE identifier, may be empty |
+| `cwe` | TEXT | Human-readable label, e.g. `Insecure Direct Object Reference (IDOR)`. Empty when unclassified |
 | `title` | TEXT | Report title |
-| `cve` | TEXT | JSON array of CVE IDs, e.g. `["CVE-2024-1234"]` |
+| `cve` | TEXT | JSON array of CVE IDs, e.g. `["CVE-2024-1234"]`, `[]` when none |
 | `url` | TEXT | Public report URL |
 | `program` | TEXT | Program handle |
-| `markdown` | TEXT | Full `vulnerability_information` body |
+| `markdown` | TEXT | Full `vulnerability_information` body, may be empty |
 
-Example query:
+`cwe` is a name, not a number, and XSS is split into variants (`Reflected`, `Stored`, `DOM`, `Generic`). Discover the exact labels before filtering:
+
+    sqlite3 -header -column reports.sqlite \
+      "SELECT cwe, COUNT(*) AS n FROM reports WHERE cwe != '' GROUP BY cwe ORDER BY n DESC LIMIT 40;"
+
+Filter by bug class:
+
+    # IDOR / BOLA
+    sqlite3 reports.sqlite \
+      "SELECT report_id, program, title FROM reports
+       WHERE cwe LIKE '%IDOR%' OR cwe LIKE '%Insecure Direct Object%'
+       ORDER BY report_id DESC LIMIT 50;"
+
+    # every XSS variant
+    sqlite3 reports.sqlite \
+      "SELECT cwe, COUNT(*) FROM reports WHERE cwe LIKE '%Cross-site Scripting%' GROUP BY cwe;"
+
+Pull report bodies for analysis (keep output bounded - bodies reach 80 KB):
 
     sqlite3 reports.sqlite \
-      "SELECT report_id, program, title FROM reports ORDER BY report_id DESC LIMIT 20;"
+      "SELECT report_id, title, markdown FROM reports
+       WHERE cwe LIKE '%Server-Side Request Forgery%' AND length(markdown) > 800
+       ORDER BY report_id DESC LIMIT 10;"
+
+For read-only access without touching the file:
+
+    sqlite3 'file:reports.sqlite?mode=ro' "SELECT COUNT(*) FROM reports;"
+
+## Building a hunting skill from the data
+
+The intended consumer is an AI agent. `SKILL.md` describes the full loop: find or build the database, resolve the bug class to real CWE labels, sample reports without flooding context, extract techniques and edge cases with `report_id` evidence, then write a new skill from them.
+
+Typical request to give the agent:
+
+> Build me a skill for finding IDOR. Use the existing reports.sqlite, don't re-scrape.
+
+The agent queries the database directly; you do not need to export anything.
 
 ## How it works
 
